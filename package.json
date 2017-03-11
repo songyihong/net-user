@@ -1,0 +1,36 @@
+{
+  "name": "net-user",
+  "version": "0.0.0",
+  "description": "The Windows NET USER command wrapped in JavaScript",
+  "license": "MIT",
+  "author": {
+    "name": "Matthew Rafferty",
+    "email": "mmraff@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmraff/net-user.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mmraff/net-user/issues"
+  },
+  "engines": {
+  },
+  "devDependencies": {
+    "chai": "^3.4",
+    "mocha": "^2.5"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha"
+  },
+  "keywords": [
+    "windows",
+    "win32",
+    "net",
+    "user",
+    "userinfo",
+    "userprofile"
+  ],
+  "homepage": "https://github.com/mmraff/net-user#readme"
+}
