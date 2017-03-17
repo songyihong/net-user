@@ -14,8 +14,7 @@
   "bugs": {
     "url": "https://github.com/mmraff/net-user/issues"
   },
-  "engines": {
-  },
+  "os": [ "win32" ],
   "devDependencies": {
     "chai": "^3.4",
     "mocha": "^2.5"
