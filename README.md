@@ -48,7 +48,7 @@ Fetches the list of usernames for all accounts on the system.
 Alias for `usernames(cb)`.
 
 ### nu.netUser([name,] cb)
-Fetch the account information of the named user.
+Fetches the account information of the named user.
 - **`name`**: {string} The username.  
   Optional. If not supplied, the call becomes an alias for `usernames(cb)`.  
   If supplied but contains invalid characters, an assertion will be thrown.
@@ -60,7 +60,7 @@ Fetch the account information of the named user.
     If `name` was supplied but is not known by the system, this is `null`.
 
 ### nu.getAll(cb)
-Fetch the account information of every user known by the system.
+Fetches the account information of every user known by the system.
 - **`cb(err, dataList)`**: {function} Callback function.
   + `err`: {Error} if any.
   + `dataList`: {Array} in which each element is an object as described for the
