@@ -10,13 +10,34 @@ var exec = require('child_process').exec
 
 var RE_KEY_VAL_PAIR = /^(\S+(?: \S+)*)(?:\s{2,}(\S.*)?)?$/
   , RE_TITLE = /^User accounts for /
-  , RE_CLOSING = /^The command /
+  , RE_CLOSING = /^The command completed successfully./
   , RE_HR = /^-+$/
 
-module.exports.usernames = usernames
-module.exports.netUsers = usernames
-module.exports.netUser = netUser
-module.exports.getAll = getAllUsersInfo
+// ANSI text-altering sequences
+var yellowSeq = "\u001b[33m"
+  , brightSeq = "\u001b[1m"
+  , resetSeq  = "\u001b[0m"
+
+module.exports = {
+  usernames: usernames_depr,// TODO: deprecate
+  netUsers: netUsers_depr, // TODO: deprecate
+  netUser: netUser,    // TODO: deprecate
+  list: usernames,
+  get: getUser,
+  getAll: getAllUsers
+}
+
+function usernames_depr(cb) {
+  console.warn(yellowSeq + brightSeq +
+    "DEPRECATED: usernames() - use list() instead" + resetSeq)
+  return usernames(cb)
+}
+
+function netUsers_depr(cb) {
+  console.warn(yellowSeq + brightSeq +
+    "DEPRECATED: netUsers() - use list() instead" + resetSeq)
+  return usernames(cb)
+}
 
 // Fetch only the list of usernames on the local system
 function usernames(cb) {
@@ -42,23 +63,33 @@ function usernames(cb) {
   })
 }
 
-// Fetch the data of the named user only, or fetch only the list of usernames
+// Fetch the data of the named user, or fetch only the list of usernames
 // on the local system if no username given
 function netUser(userName, cb) {
+  console.warn(yellowSeq + brightSeq +
+    "DEPRECATED: netUser() - use get() or list() instead" + resetSeq)
+
   if (typeof cb !== 'function') {
     if (userName && typeof username === 'function') {
       cb = userName; userName = undefined
     }
   }
+
+  if (!userName) return usernames(cb)
+  return getUser(userName, cb)
+}
+
+// Fetch the data of the named user
+function getUser(userName, cb) {
+  assert(typeof userName === 'string' || userName instanceof String,
+   'Must give username as a string')
   assert(typeof cb === 'function', 'Must provide callback')
 
-  var argType = typeof userName
-  if (argType === 'undefined' || userName === null) return usernames(cb)
-
-  assert(argType === 'string', 'Must give username as a string')
-
   userName = userName.trim()
-  assert(userName, 'Given username is empty')
+  assert(userName.length, 'Given username is empty')
+  assert(userName.length <= 20, 'Given username is too long')
+  // "The name of the user account can have as many as 20 characters."
+  // - NET USER documentation
 
   // Guard against injection of change commands, and against illegal chars:
   // "User account names ... cannot be terminated by a period and they
@@ -66,20 +97,21 @@ function netUser(userName, cb) {
   assert(userName.search(/[,"/\\\[\]:|<>+=;?*\x00-\x1F]/) == -1,
     'Illegal character in username "' + userName + '"')
 
-  if (userName.slice(-1) === '.') {
-    console.warn('Warning', 'Removing terminating period from input',
-      '"'+userName+'"')
-    userName = userName.slice(0, -1)
-    assert(userName !== '', 'Invalid username "."')
-  }
+  assert(userName.slice(-1) !== '.', 'Invalid name "' + userName + '"')
 
-  exec('net user ' + userName, function(err, sout, serr) {
+  // But guess what: a username can have embedded spaces!
+  // Therefore, quotemarks are necessary
+  exec('net user "' + userName + '"', function(err, sout, serr) {
     if (err) {
       if (serr.indexOf('The user name could not be found.') != -1)
         return cb(null, null)
       return cb(err)
     }
-    return cb(null, parseUserInfo(sout))
+    var data
+    try { data = parseUserInfo(sout) }
+    catch (exc) { return cb(exc) }
+    return cb(null, data)
+
   }).once('error', function(err) {
     console.error('Child process is blocked')
     cb(err)
@@ -87,7 +119,9 @@ function netUser(userName, cb) {
 }
 
 // Fetch data of all local user accounts
-function getAllUsersInfo(cb) {
+function getAllUsers(cb) {
+  assert(typeof cb === 'function', 'Must provide callback')
+
   var list = []
   usernames(function(err, names) {
     if (err) return cb(err)
@@ -96,11 +130,13 @@ function getAllUsersInfo(cb) {
     function fetchNext() {
       if (names.length == 0) return cb(null, list)
 
-      exec('net user ' + names.shift(), function(err, sout, serr) {
+      exec('net user "' + names.shift() + '"', function(err, sout, serr) {
         if (err) return cb(err)
 
-        list.push(parseUserInfo(sout))
+        try { list.push(parseUserInfo(sout)) }
+        catch (exc) { return cb(exc) }
         return fetchNext()
+
       }).once('error', function(err) {
         console.error('Child process is blocked')
         cb(err)
