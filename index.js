@@ -19,9 +19,9 @@ var yellowSeq = "\u001b[33m"
   , resetSeq  = "\u001b[0m"
 
 module.exports = {
-  usernames: usernames_depr,// TODO: deprecate
-  netUsers: netUsers_depr, // TODO: deprecate
-  netUser: netUser,    // TODO: deprecate
+  usernames: usernames_depr,
+  netUsers: netUsers_depr,
+  netUser: netUser,
   list: usernames,
   get: getUser,
   getAll: getAllUsers
