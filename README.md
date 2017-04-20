@@ -2,7 +2,7 @@
 The Windows `NET USER` command wrapped in JavaScript
 
 ## Background
-[`NET USER`](https://technet.microsoft.com/en-us/library/bb490718.aspx)
+[`NET USER`](https://technet.microsoft.com/en-us/library/cc771865.aspx)
 is a sub-command of the `NET` command line tool that is provided for shell-based
 management of user accounts on Windows. If a username is specified, and no
 change switches are used, it's roughly equivalent to using
