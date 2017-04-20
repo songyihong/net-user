@@ -1,259 +1,296 @@
-var exec = require('child_process').exec
+var assert = require('assert')
   , os = require('os')
-  , assert = require('assert')
   , expect = require('chai').expect
-  , netUser = require('../')
+  , mod = require('../')
 
-var propXRef = {
-  "User name": "user_name",
-  "Full Name": "full_name",
-  "Comment":   "comment",
-  "User's comment":  "usr_comment",
-  "Country code":    "country_code",
-  "Account active":  "acct_active",
-  "Account expires": "acct_expires",
-  "Password last set":   "password_set",
-  "Password expires":    "password_expires",
-  "Password changeable": "password_changeable",
-  "Password required":   "password_required",
-  "User may change password": "password_can_change",
-  "Workstations allowed": "workstations",
-  "Logon script":   "script_path",
-  "User profile":   "profile",
-  "Home directory": "home_dir",
-  "Last logon":     "last_logon",
-  "Logon hours allowed": "logon_hours",
-  "Local Group Memberships": "local_groups",
-  "Global Group memberships": "global_groups"
+function dummyFunc(err, data) {
+  assert(false, 'This dummy function should never get called!')
 }
-var RE_TITLE = /^User accounts for /
-  , RE_CLOSING = /^The command /
-  , RE_HR = /^-+$/
+
+if (process.platform !== 'win32') {
+  console.error('This module is only meant for Windows platforms.\n' +
+    'Aborting tests.\n');
+  return
+}
 
 describe('net-user module', function() {
-  it('should export functions: netUsers, usernames, netUser, getAll', function() {
-    expect(netUser.netUsers).to.be.a('function')
-    expect(netUser.usernames).to.be.a('function')
-    expect(netUser.netUser).to.be.a('function')
-    expect(netUser.getAll).to.be.a('function')
+  it('should export functions: netUsers, usernames, netUser, list, get, getAll',
+  function() {
+    expect(mod.netUsers).to.be.a('function')
+    expect(mod.usernames).to.be.a('function')
+    expect(mod.netUser).to.be.a('function')
+    expect(mod.list).to.be.a('function')
+    expect(mod.get).to.be.a('function')
+    expect(mod.getAll).to.be.a('function')
   })
-})
 
-function reconstructDateStr(d) {
-  var calDate = [ d.getMonth() + 1, d.getDate(), d.getFullYear() ].join('/')
-  var hour = d.getHours()
-    , min = d.getMinutes()
-    , sec = d.getSeconds()
-    , time, merid
+  var unknownName = "A B C D E F G H I J" // Actually valid! But unlikely
+    , emptyArgs   = [ undefined, null, '', new String() ]
+    , invalidArgs = [ 42, true, {}, [] ]
+    // This will be the results returned by mod.list(), used throughout the suite:
+    , refList
+    // RegExps
+    , RE_BADCHARS = /[,"/\\\[\]:|<>+=;?*\x00-\x1F]/
+    , RE_ENDPERIOD = /\.$/
+    , RE_ASSERTION = /AssertionError:/
 
-  if (hour < 12) {
-    merid = 'AM'
-    if (hour == 0) hour = 12
+  // Below, 'type' refers to the string value to be passed to chai for validation
+  // of the actual field value (when there is one, or when noValueOK == false)
+  var fieldMap = {
+    user_name: {
+      type: 'string',
+      noValueOK: false
+    },
+    full_name: {
+      type: 'string',
+      noValueOK: true
+    },
+    comment: {
+      type: 'string',
+      noValueOK: true
+    },
+    usr_comment: {
+      type: 'string',
+      noValueOK: true
+    },
+    country_code: {
+      type: 'string',
+      noValueOK: true
+    },
+    acct_active: {
+      type: 'boolean',
+      noValueOK: false
+    },
+    acct_expires: {
+      type: 'date',
+      noValueOK: true
+    },
+    password_set: {
+      type: 'date',
+      noValueOK: true
+    },
+    password_expires: {
+      type: 'date',
+      noValueOK: true
+    },
+    password_changeable: {
+      type: 'date',
+      noValueOK: true
+    },
+    password_required: {
+      type: 'boolean',
+      noValueOK: false
+    },
+    password_can_change: {
+      type: 'boolean',
+      noValueOK: false
+    },
+    workstations: {
+      type: 'array',
+      noValueOK: true
+    },
+    script_path: {
+      type: 'string',
+      noValueOK: true
+    },
+    profile: {
+      type: 'string',
+      noValueOK: true
+    },
+    home_dir: {
+      type: 'string',
+      noValueOK: true
+    },
+    last_logon: {
+      type: 'date',
+      noValueOK: true
+    },
+    logon_hours: {
+      type: 'array',
+      noValueOK: true
+    },
+    local_groups: {
+      type: 'array',
+      noValueOK: false
+    },
+    global_groups: {
+      type: 'array',
+      noValueOK: false
+    }
   }
-  else {
-    merid = 'PM'
-    if (12 != hour) hour -= 12
-  }
-  if (min < 10) min = '0' + min
-  if (sec < 10) sec = '0' + sec
-  time = [ hour, min, sec ].join(':')
 
-  return [ calDate, time, merid ].join(' ')
-}
+  describe('list() call', function() {
 
-function compareNetUsers(apiFunc, cb) {
-  exec('net users', function(err, sout, serr) {
-    var lines = sout.split(os.EOL).map(function(s) {
-      if (RE_TITLE.test(s) || RE_HR.test(s) || RE_CLOSING.test(s))
-        return undefined
-      return s.trim().replace(/\s{3,}/g, '  ')
-    }).filter(function(s) { return s ? true : false })
+    // Here the reference data is collected, as a side effect of the test; if
+    // there are no localgroups defined, we abort the whole test suite
+    before(function(done) {
 
-    var names = lines.join('  ')
-    apiFunc(function(err, list) {
-      if (err) return done(err)
-      expect(list.join('  ')).to.equal(names)
-      cb()
-    })
-  }).once('error', function(err) {
-    console.error('Child process is blocked')
-    cb(err)
-  })
-}
-
-describe('net-user function netUsers', function() {
-  it('should provide a list of names that match those in output of NET USERS', function(done) {
-    compareNetUsers(netUser.netUsers, done)
-  })
-})
-
-describe('net-user function usernames', function() {
-  it('should provide a list of names that match those in output of NET USERS', function(done) {
-    compareNetUsers(netUser.usernames, done)
-  })
-})
-
-function compareUserInfo(nm, data, cb) {
-  assert(nm && typeof nm == 'string', 'Bad nm arg: "' + nm + '"')
-
-  exec('net user ' + nm, function(err, sout, serr) {
-    var lines = sout.split(os.EOL).map(function(s) {
-      if (RE_CLOSING.test(s)) return undefined
-      return s.trimRight().replace(/\s{3,}/g, '  ')
-    }).filter(function(s) { return s ? true : false })
-
-      var i, j, k
-      for (i = 0; i < lines.length; i++) {
-        // Note that we filtered out the blank lines above
-        var pair = lines[i].split(/\s\s+/) // HERE'S THE SOURCE OF ERROR FOR 1st GROUPS LINE
-        var apiVal = data[propXRef[pair[0]]]
-        switch (pair[0]) {
-          // To be compared directly
-          case "User name":
-          case "Full Name":
-          case "Comment":
-          case "User's comment":
-          case "Logon script":
-          case "User profile":
-          case "Home directory":
-            expect(pair[1]).to.equal(apiVal)
-            break
-
-          case "Country code":
-            if (!pair[1] || pair[1] === '(null)')
-              expect(apiVal).to.be.null
-            else {
-              // Country code is 3 digits
-              expect(apiVal).to.match(/^\d{3}$/)
-              // Value possibly followed by something, so check only prefix
-              expect(pair[1].indexOf(apiVal)).to.equal(0)
-            }
-            break
-
-          // To be compared by conversion of boolean to string
-          case "Account active":
-          case "Password required":
-          case "User may change password":
-            if (pair[1] === 'Yes') expect(apiVal).to.be.true
-            else if (pair[1] === 'No') expect(apiVal).to.be.false
-            else expect(apiVal).to.be.undefined
-            break
-
-          // To be compared by Date object conversion
-          case "Account expires": 
-          case "Password last set":
-          case "Password expires":
-          case "Password changeable":
-          case "Last logon":
-            if (pair[1] ==='Never') expect(apiVal).to.be.null
-            //else expect(new Date(pair[1]).toString()).to.equal(apiVal.toString())
-            //else expect(pair[1]).to.equal(reconstructDateStr(apiVal))
-            // Wobbly time value parsings!!! Sometimes off by 1000ms. Can't trust.
-            // It's wrong that this is needed, but it works:
-            else expect(Math.abs(Date.parse(pair[1]) - apiVal.getTime())).to.be.at.most(1000)
-            break
-
-          case "Workstations allowed":
-            if (pair[1] === 'All') expect(apiVal).to.be.null
-            else {
-              expect(apiVal).to.be.instanceof(Array)
-              if (!pair[1]) expect(apiVal).to.have.lengthOf(0)
-              else expect(apiVal.join(',')).to.equal(pair[1].trim())
-            }
-            break
-
-          // Might involve multiple lines...
-          // logon_hours can have values "All" and "None"
-          case "Logon hours allowed":
-            if (pair[1] === 'All') { expect(apiVal).to.be.null; break }
-            expect(apiVal).to.be.instanceof(Array)
-            if (pair[1] === 'None') { expect(apiVal).to.have.lengthOf(0); break }
-            expect(apiVal[0]).to.equal(pair[1])
-            
-            for (j = i + 1, k = 1; j < lines.length; j++) {
-              pair = lines[j].split(/\s\s/)
-              // For a timespan line, pair will be ['', timespanExpr]
-              // For the next property line, pair will be [label, '' | value]
-              if (pair[0]) break
-              expect(apiVal[k]).to.equal(pair[1])
-              k++
-            }
-            i = j - 1; break
-
-          // List of star-prefixed items; might be multiple lines
-          case "Local Group Memberships":
-          case "Global Group memberships":
-            expect(apiVal).to.be.instanceof(Array)
-            if (pair[1] === '*None') { expect(apiVal).to.have.lengthOf(0); break }
-
-            // A correction for splitting on multiple spaces (see top of func),
-            // where such spacing may be separating group names:
-            while (pair.length > 2) pair[1] += '  ' + pair.pop()
-
-            for (j = i + 1; j < lines.length; j++) {
-              if (/^\s\s\*/.test(lines[j]) === false) break
-              pair[1] += lines[j].replace(/\s*\*/g, '  *')
-            }
-            expect('*' + apiVal.join('  *')).to.equal(pair[1])
-            i = j - 1
-            break
+      mod.list(function(err, data) {
+        if (err) return done(err)
+        expect(data).to.be.instanceof(Array)
+        if (data.length == 0) {
+          console.warn(
+            'NO LOCAL USERS DEFINED ON THIS SYSTEM!\n' +
+            'NO MEANINGFUL TESTS CAN BE DONE, SO TEST SUITE WILL BE ABORTED.\n' +
+            'SORRY!'
+          );
+          process.exit()
         }
-      }
-      cb()
-  }).once('error', function(err) {
-    console.error('Child process is blocked')
-    cb(err)
-  })
-}
-
-describe('net-user function netUser', function() {
-  var validNames
-
-  it('should provide set of fields that corresponds to output of NET USER <name>', function(done) {
-
-    // Get the list of users on the system, and pick the first one as test subject
-    netUser.usernames(function(err, list) {
-      if (err) return done(err)
-      expect(list.length).to.be.at.least(1)
-      validNames = list // Save them for the next test!
-      netUser.netUser(list[0], function(err, data) {
-        compareUserInfo(list[0], data, done)
+        refList = data
+        done()
       })
     })
-  })
 
-  it('should give null result for username that has no account on the system', function(done) {
-    var tempName
-    do {
-      tempName = (new Date).getTime().toString()
-    } while (validNames && validNames.indexOf(tempName) !== -1)
+    it('should pass back an array of only nonempty strings through the callback',
+    function() {
+      // This test includes what before() started
+      expect(refList).to.be.an('array')
+      for (var i = 0; i < refList.length; i++) {
+        expect(refList[i]).to.be.a('string').that.is.not.empty
+      }
+    })
 
-    netUser.netUser(tempName, function(err, data) {
-      if (err) return done(err)
-      expect(data).to.be.null
-      done()
+    it('should throw an assertion if no callback given', function() {
+      expect(function(){ mod.list() }).to.throw(Error, RE_ASSERTION)
+      expect(function(){ mod.list(refList[0]) }).to.throw(Error, RE_ASSERTION)
+      for (var i = 0; i < invalidArgs.length; i++) {
+        expect(function(){ mod.list(invalidArgs[i]) }).to.throw(Error, RE_ASSERTION)
+      }
+    })
+
+    it('each element should conform to MS rules for user names', function() {
+      // "User account names are limited to 20 characters... In addition,
+      // account names cannot be terminated by a period and they cannot include
+      // commas or any of the following printable characters:
+      // ", /, \, [, ], :, |, <, >, +, =, ;, ?, *.  Names also cannot include
+      // characters in the range 1-31, which are nonprintable." - MSDN
+      // See RE_BADCHARS and RE_ENDPERIOD declarations at top of file.
+      for (var i = 0; i < refList.length; i++) {
+        var uname = refList[i]
+        expect(uname.length).to.be.at.most(20)
+        expect(uname).to.not.match(RE_BADCHARS).and.not.match(RE_ENDPERIOD)
+      }
     })
   })
-})
 
-describe('net-user function getAll', function() {
-  it('should provide an array of objects where each set of fields corresponds '
-     + 'to output of NET USER <name> for each user account on system', function(done) {
+  // This gets used by tests of get() and getAll()
+  function validateUserData(data, userName) {
+    expect(data).to.be.an('object')
+    if (userName)
+      expect(data).to.have.property('user_name', userName)
+    else {
+      expect(data).to.have.property('user_name').that.is.a('string')
+        .that.is.not.empty
+      expect(refList.indexOf(data.user_name)).to.not.equal(-1)
+    }
 
-    this.timeout(0) // because lots of work to do!
-    netUser.getAll(function(err, data) {
-      netUser.usernames(function(err, list) {
+    for (var fieldName in fieldMap) {
+      if (fieldName === 'user_name') continue // Already validated above
+      expect(data).to.have.property(fieldName)
+
+      var item = data[fieldName]
+      if ((item === undefined || item === null) &&
+          fieldMap[fieldName].noValueOK) continue
+
+      expect(item).to.be.a(fieldMap[fieldName].type)
+
+      switch (fieldMap[fieldName].type) {
+        case 'string':
+          expect(item.trim()).to.not.be.empty
+          break
+        case 'date':
+          expect(item.toString()).to.not.equal('Invalid Date')
+          break
+        case 'array':
+          for (var i = 0; i < item.length; i++)
+            expect(item[i]).to.be.a('string').that.is.not.empty
+        //case 'boolean': // Nothing to test
+      }
+    }
+
+    for (var fld in data) {
+      assert(fieldMap[fld], 'Unrecognized field in user data: ' + fld)
+    }
+  }
+
+  describe('get() call', function() {
+
+    it('should throw an assertion if name is empty, not given, or not a string',
+    function() {
+      expect(function(){ mod.get() }).to.throw(Error, RE_ASSERTION)
+      expect(function(){ mod.get(dummyFunc) }).to.throw(Error, RE_ASSERTION)
+      expect(function(){ mod.get(null) }).to.throw(Error, RE_ASSERTION)
+      expect(function(){ mod.get(null, dummyFunc) }).to.throw(Error, RE_ASSERTION)
+
+      for (var i = 0; i < invalidArgs.length; i++) {
+        expect(function(){ mod.get(invalidArgs[i], dummyFunc) })
+          .to.throw(Error, RE_ASSERTION)
+      }
+    })
+
+    it('should throw an assertion if given name does not conform to MS rules',
+    function() {
+      expect(function(){ mod.get('ABCDEFGHIJ_0123456789', dummyFunc) })
+        .to.throw(Error, RE_ASSERTION) // too long
+      expect(function(){ mod.get('Q: Are We Not Men?', dummyFunc) })
+        .to.throw(Error, RE_ASSERTION) // illegal characters
+      // Try to exploit command injection:
+      expect(function(){ mod.get('Administrator" /comment:"Belong To Us', dummyFunc) })
+        .to.throw(Error, RE_ASSERTION) // also illegal characters
+      expect(function(){ mod.get('Guest.', dummyFunc) })
+        .to.throw(Error, RE_ASSERTION) // ends with a period
+    })
+
+    it('should throw an assertion if no callback given', function() {
+      expect(function(){ mod.get(refList[0]) }).to.throw(Error, RE_ASSERTION)
+    })
+
+    it('should pass back null through the callback if given name is not known',
+    function(done) {
+      mod.get(unknownName, function(err, data) {
         if (err) return done(err)
-        var i = 0
+        expect(data).to.be.null
+        done()
+      })
+    })
 
-        function next(err) {
+    it('should pass back valid data for any username defined on the system',
+    function(done) {
+
+      function nextUser(i) {
+        if (i >= refList.length) return done()
+        mod.get(refList[i], function(err, data) {
           if (err) return done(err)
-          if (i === list.length) return done()
-          compareUserInfo(list[i], data[i], next)
-          i++
-        }
+          validateUserData(data, refList[i])
 
-        next()
+          return nextUser(i + 1)
+        })
+      }
+
+      nextUser(0) // Kickoff
+    })
+  })
+
+  describe('getAll() call', function() {
+
+    it('should throw an assertion if no callback given', function() {
+      expect(function(){ mod.getAll() }).to.throw(Error, RE_ASSERTION)
+      expect(function(){ mod.getAll(refList[0]) }).to.throw(Error, RE_ASSERTION)
+      for (var i = 0; i < invalidArgs.length; i++) {
+        expect(function(){ mod.getAll(invalidArgs[i]) }).to.throw(Error, RE_ASSERTION)
+      }
+    })
+
+    it('should pass back an array of only valid object elements like that from get()',
+    function(done) {
+      this.timeout(0) // because lots of work to do!
+      mod.getAll(function(err, data) {
+        if (err) return done(err)
+        expect(data).to.be.an('array').with.lengthOf(refList.length)
+        for (var i = 0; i < data.length; i++)
+          validateUserData(data[i])
+
+        done()
       })
     })
   })
