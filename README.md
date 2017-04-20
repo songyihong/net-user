@@ -1,70 +1,89 @@
 # net-user
-The Windows NET USER command wrapped in JavaScript
+The Windows `NET USER` command wrapped in JavaScript
 
-## What Is That
-`NET USER` is a sub-command of the
-[`NET` command line tool](https://technet.microsoft.com/en-us/library/bb490718.aspx)
-on Windows. If a username is included, and no change switches are used, it's
-roughly equivalent to using `getent passwd <username>` on Unix/Linux, or
-`id -P <username>` on macOS, then parsing and pretty-printing the results.
+## Background
+[`NET USER`](https://technet.microsoft.com/en-us/library/bb490718.aspx)
+is a sub-command of the `NET` command line tool that is provided for shell-based
+management of user accounts on Windows. If a username is specified, and no
+change switches are used, it's roughly equivalent to using
+```sh
+getent passwd <username>
+```
+on Unix/Linux, or
+```sh
+id -P <username>
+```
+on macOS, then displaying formatted results.
 The output may not contain everything you could possibly want, but there's a lot.
 
 ## Query Only
-The Windows command `NET USER` allows administrators to change settings on user
-accounts.  
-The current version of this module does not provide an interface for that; it
-only retrieves information.
+The Windows command `NET USER` also allows administrators to create, change,
+and delete user accounts. The current version of this module does not provide an
+interface for that; it only retrieves information.
 
 ## Caveat: Privilege and Permission
 If you try to use this module from an under-privileged account on a system that
 has been security-hardened, you may see something like the following:
-```sh
+<pre>
 The command prompt has been disabled by your administrator.
 
 Press any key to continue . . .
-```
-This means that a child process spawned by the module has been shot down, and so
+</pre>
+... or you may see nothing, because the callback is never called.
+This means that the child process spawned by the module has been killed, and so
 you won't be able to get any results.
 
 ## Install
 
-```sh
-$ npm install net-user
+<pre>
+C:\Users\myUser><b>npm install net-user</b>
+</pre>
+
+## Usage
+```js
+var netUser = require('net-user')
 ```
 
 ## API
-Assume the module is accessed like so:
 
-```js
-var nu = require('net-user')
-```
-### nu.usernames(cb)
-Fetches the list of usernames for all accounts on the system.
-- **`cb(err, list)`**: {function} Callback function.
-  + `err`: {Error} if any.
-  + `list`: {Array} An array of usernames as strings.
+### netUser.list(callback)
+Fetches the list of usernames for all accounts on the system, and passes it
+back through the `callback` function.
+- **`callback`**: {Function}
+  + `error`: {Error | `null`}
+  + `data`: {Array} array of strings, if no error
 
-### nu.netUsers(cb)
-Alias for `usernames(cb)`.
-
-### nu.netUser([name,] cb)
-Fetches the account information of the named user.
+### netUser.get(name, callback)
+Fetches the account information of the named user, and passes it back through
+the `callback` function.
 - **`name`**: {string} The username.  
-  Optional. If not supplied, the call becomes an alias for `usernames(cb)`.  
-  If supplied but contains invalid characters, an assertion will be thrown.
-- **`cb(err, data)`**: {function} Callback function.
-  + `err`: {Error} if any command error other than "No such user".
-  + `data`: {object | Array}  
-    If `name` was supplied and is the name of an account on the system, this is
-    an object containing all properties listed in the Field Mapping table below.  
-    If `name` was supplied but is not known by the system, this is `null`.
+  If not given, or it does not conform to Windows account naming rules, an
+  assertion will be thrown.
+- **`callback`**: {Function}  
+  + `error`: {Error | `null`} if any command error other than "No such user".
+  + `data`: {Object | `null`}  
+    If `name` matches an account on the system, this is an object containing
+    all properties listed in the Field Mapping table below.  
+    If `name` is not known by the system, this is `null`.
 
-### nu.getAll(cb)
-Fetches the account information of every user known by the system.
-- **`cb(err, dataList)`**: {function} Callback function.
-  + `err`: {Error} if any.
-  + `dataList`: {Array} in which each element is an object as described for the
-    `data` argument resulting from call to `netUser(name, cb)` (see above).
+### netUser.getAll(callback)
+Fetches the account information of every user known by the system, and passes it
+back through the `callback` function.
+- **`callback`**: {Function}
+  + `error`: {Error | `null`}
+  + `dataList`: {Array} in which each element is an object containing
+    all properties listed in the Field Mapping table below.
+
+### netUser.netUser([name,] callback)
+*Deprecated - use `get()` or `list()` instead*.  
+If name supplied, becomes alias for `netUser.get(name, callback)`.  
+If no name given, becomes alias for `netUser.list(callback)`.
+
+### netUser.netUsers(callback)
+*Deprecated*. Alias for `netUser.list(callback)`.
+
+### netUser.usernames(callback)
+*Deprecated*. Alias for `netUser.list(callback)`.
 
 ## Field Mapping
     | `netUser()` result property  |  type   | `NET USER` output label
@@ -94,7 +113,7 @@ Fetches the account information of every user known by the system.
 ## Notes per Field
 
   **`user_name`**  
-    This will be the same as the username argument given to `netUser()`.
+    This will be the same as the username argument given to `get()`.
     Never empty!
 
   **`full_name`**  
