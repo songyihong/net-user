@@ -46,15 +46,19 @@ function usernames(cb) {
   exec('net user', function(err, sout, serr) {
     if (err) cb(err)
 
-    var lines = sout.split(os.EOL)
-      , names = []
-    for (var i = 0; i < lines.length; i++) {
+    var lines = sout.replace(/(\r?\n)+$/ig, '').split(os.EOL)
+      , names = [], isStart = false
+    for (var i = 0; i < (lines.length - 1); i++) {
       if (lines[i] === '') continue
-      if (RE_TITLE.test(lines[i]) || RE_HR.test(lines[i])) continue
-      if (RE_CLOSING.test(lines[i])) break
-      names = names.concat(
-        lines[i].split(/\s+/).filter(function(v){ return v !== '' })
-      )
+      if (RE_HR.test(lines[i])) {
+        isStart = true
+        continue
+      }
+      if (isStart) {
+        names = names.concat(
+          lines[i].split(/\s+/).filter(function(v){ return v !== '' })
+        )
+      }
     }
     return cb(null, names)
   }).once('error', function(err) {
